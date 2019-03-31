@@ -21,7 +21,7 @@ public class GreetingController {
     private final AtomicLong counter = new AtomicLong();
 
     @RequestMapping("/greeting")
-    public Greeting greeting(@RequestParam(value="name", defaultValue="Mauricio") String name) {
+    public Greeting greeting(@RequestParam(value="name", defaultValue="Dispapeles") String name) {
         HashMap<String, String> datasource = myAppProperties.getDatasource();
         String dBUrl = datasource.get("url");
         return new Greeting(counter.incrementAndGet(),
@@ -30,7 +30,7 @@ public class GreetingController {
     }
 
     @RequestMapping("/bye")
-    public Greeting bye(@RequestParam(value="name", defaultValue="Mauricio") String name) {
+    public Greeting bye(@RequestParam(value="name", defaultValue="Dispapeles") String name) {
         return new Greeting(counter.incrementAndGet(),
                             String.format(templateBye, name),
                             "This is just a Description");
