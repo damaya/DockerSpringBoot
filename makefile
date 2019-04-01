@@ -65,6 +65,68 @@ open: ## Open app in the browser
 expose: ## Expose your local environment to the internet, thanks to Serveo (https://serveo.net)
 	ssh -R 80:localhost:$(subst 0.0.0.0:,,$(shell docker-compose port app 8080)) serveo.net
 
+# Update Docker Image in ECR
+tag: ## Tag and push current branch. Usage make tag version=<semver>
+	git tag -a $(version) -m "Version $(version)"
+	git push origin $(version)
+
+squash: branch := $(shell git rev-parse --abbrev-ref HEAD)
+squash:
+	git rebase -i $(shell git merge-base origin/$(branch) origin/master)
+	git push -f
+
+publish: container ?= app
+publish: environment ?= Production
+#publish: test release checkoutlatesttag deployimage
+publish: ## Tag and deploy version. Registry authentication required. Usage: make publish
+	make updateservice
+
+preview review: container ?= app
+preview review: version := $(shell git rev-parse --abbrev-ref HEAD)
+preview review: | build
+	make deployimage
+	make updateservice
+
+push: branch := $(shell git rev-parse --abbrev-ref HEAD)
+push: ## Review, add, commit and push changes using commitizen. Usage: make push
+	git diff
+	git add -A .
+	@docker run --rm -it -e CUSTOM=true -v $(CURDIR):/app -v $(HOME)/.gitconfig:/root/.gitconfig aplyca/commitizen
+	git pull origin $(branch)
+	git push -u origin $(branch)
+
+checkoutlatesttag:
+	git fetch --prune origin "+refs/tags/*:refs/tags/*"
+	git checkout $(shell git describe --always --abbrev=0 --tags)
+
+ecslogin:
+	$(shell docker run --rm -it --env AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} --env AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} infrastructureascode/aws-cli:1.16.23 ash -c "aws ecr get-login --no-include-email --region us-east-2")
+
+release:
+	git checkout production
+	docker run --rm -it -v $(CURDIR):/app -v ~/.ssh:/root/.ssh -w /app aplyca/semantic-release ash -c "semantic-release --no-ci"
+	git pull
+
+updateservice: environment ?= prod
+updateservice: ## �  Update service in ECS: customAppService
+	$(info �  Updating ECS service SpringBoot APP ...)
+	@docker run --rm -it --env AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} --env AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} infrastructureascode/aws-cli ash -c "aws ecs update-service --cluster customApp --service customAppService --force-new-deployment --region us-east-2 --query 'service.{status:status,pendingCount:pendingCount,desiredCount:desiredCount,runningCount:runningCount,serviceName:serviceName,taskDefinition:taskDefinition}'"
+
+deployimage: container ?= app
+deployimage: registryurl ?= 111377159952.dkr.ecr.us-east-2.amazonaws.com/springboot/app
+deployimage: version ?= $(shell git describe --always --abbrev=0 --tags)
+deployimage: ecslogin ## �  Login to Registry, build, tag and push the images. Registry authentication required. Usage: make deployimage version="<semver>". Use version=latest to create the
+	latest image
+		$(info �  Pushing version '$(version)' of the '$(container)' Docker image ...)
+		docker build --target prod -t $(registryurl):$(version) -f Dockerfile .
+		docker push $(registryurl):$(version)
+
+#deploylatestimage: version ?= $(shell git describe --always --abbrev=0 --tags)
+deploylatestimage: version ?= latest
+deploylatestimage: ## Login to Registry, build, tag with the latest images and push to registry. Registry authentication required. Usage: make deploylatestimage version="<semver>"
+	docker tag $(registryurl):$(version) $(registryurl):latest
+	docker push $(registryurl):latest
+
 h help: ## This help.
 	@echo 'Usage: make <task>'
 	@echo 'Default task: build'
